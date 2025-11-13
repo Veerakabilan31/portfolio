@@ -312,8 +312,7 @@ def logout():
 # ====== Home (optional) ======
 @app.route('/')
 def home():
-    # you can serve index.html directly via static file or template
-    return redirect("/index.html")
+    return "Backend Active", 200
 
 if __name__ == "__main__":
     init_db()
