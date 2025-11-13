@@ -50,6 +50,9 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+# Initialize DB on startup (important for Render)
+init_db()
+
 
 # ====== Visitor Logger ======
 @app.before_request
