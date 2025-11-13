@@ -1,22 +1,19 @@
 # server.py
 import os
 import sqlite3
-import smtplib
 import csv
 import io
 import time
+import requests
 from datetime import datetime
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file, abort
-from flask_cors import CORS
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from dotenv import load_dotenv
 
 # Load env
 load_dotenv()
 
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
+EMAIL_USER = os.getenv("EMAIL_USER")             # your email (used as recipient/from label)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")     # required: set in Render env
 SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret")
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "12345")
@@ -25,16 +22,14 @@ DB_FILE = "portfolio.db"
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
+# Simple CORS headers for GitHub Pages -> Render
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
-
-
 
 # ====== Database Setup ======
 def init_db():
@@ -59,14 +54,13 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+
 # Initialize DB on startup (important for Render)
 init_db()
-
 
 # ====== Visitor Logger ======
 @app.before_request
 def log_visitor():
-    # endpoints to ignore (so admin actions / API calls don't spam visits)
     ignore = {
         'static', 'dashboard', 'delete_message', 'delete_visit',
         'logout', 'send_email', 'export_messages',
@@ -84,12 +78,32 @@ def log_visitor():
     except Exception as e:
         print("Visitor logging failed:", e)
 
-# ====== Contact Form API ======
+# ====== Resend helper ======
+def send_email_using_resend(to_email: str, subject: str, html_body: str):
+    """
+    Send email via Resend API.
+    Returns (status_code:int, response_text:str)
+    """
+    if not RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY not configured in environment.")
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "from": f"Veerakabilan Portfolio <onboarding@resend.dev>",
+        "to": to_email,
+        "subject": subject,
+        "html": html_body
+    }
+    r = requests.post(url, json=payload, headers=headers, timeout=30)
+    return r.status_code, r.text
 
+# ====== Contact Form API ======
 @app.route('/send-email', methods=['OPTIONS'])
 def send_email_options():
     return jsonify({"status": "ok"}), 200
-
 
 @app.route('/send-email', methods=['POST'])
 def send_email():
@@ -110,11 +124,6 @@ def send_email():
         conn.close()
 
         # Prepare HTML email to site owner
-        owner_msg = MIMEMultipart("alternative")
-        owner_msg["Subject"] = f"New Portfolio Message from {name}"
-        owner_msg["From"] = EMAIL_USER
-        owner_msg["To"] = EMAIL_USER
-
         html_body = f"""
         <html><body>
           <h3>New message from your portfolio</h3>
@@ -127,38 +136,40 @@ def send_email():
           <p style="color:gray;">Sent from your portfolio site</p>
         </body></html>
         """
-        owner_msg.attach(MIMEText(html_body, "html"))
 
-        # Send email via Gmail TLS (more reliable from localhost)
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASS)
-            server.sendmail(EMAIL_USER, EMAIL_USER, owner_msg.as_string())
+        # Send owner notification via Resend
+        try:
+            status, text = send_email_using_resend(
+                EMAIL_USER,
+                f"New Portfolio Message from {name}",
+                html_body
+            )
+            if not (200 <= status < 300):
+                print("Resend owner email failed:", status, text)
+        except Exception as ex:
+            print("Owner email send failed:", ex)
 
-            # Auto-reply to visitor
+        # Auto-reply to visitor (non-fatal)
+        try:
+            reply_html = f"""
+            <html><body>
+              <p>Hi {name},</p>
+              <p>Thanks for reaching out — I received your message and will reply soon.</p>
+              <p><b>Your message:</b><br>{message.replace('\n','<br>')}</p>
+              <br>
+              <p>— Veerakabilan</p>
+            </body></html>
+            """
             try:
-                reply = MIMEMultipart("alternative")
-                reply["Subject"] = "Thanks — I've received your message"
-                reply["From"] = EMAIL_USER
-                reply["To"] = email
+                r_status, r_text = send_email_using_resend(email, "Thanks — I've received your message", reply_html)
+                if not (200 <= r_status < 300):
+                    print("Resend reply failed:", r_status, r_text)
+            except Exception as exr:
+                print("Auto-reply failed:", exr)
+        except Exception as ex_reply:
+            print("Auto-reply (outer) failed:", ex_reply)
 
-                reply_html = f"""
-                <html><body>
-                  <p>Hi {name},</p>
-                  <p>Thanks for reaching out — I received your message and will reply soon.</p>
-                  <p><b>Your message:</b><br>{message.replace('\n','<br>')}</p>
-                  <br>
-                  <p>— Veerakabilan</p>
-                </body></html>
-                """
-                reply.attach(MIMEText(reply_html, "html"))
-                server.sendmail(EMAIL_USER, email, reply.as_string())
-            except Exception as ex_reply:
-                # Non-fatal: auto-reply failed (maybe recipient blocked)
-                print("Auto-reply failed:", ex_reply)
-
-        return jsonify({"status": "success", "message": "Message stored and email sent."})
+        return jsonify({"status": "success", "message": "Message stored; email attempts made."})
 
     except Exception as e:
         print("send_email error:", e)
@@ -253,7 +264,7 @@ def delete_message(mid):
 
 @app.route('/delete_visit/<int:vid>')
 def delete_visit(vid):
-    if 'admin_logged_in' not in session:
+    if 'admin_logged_in' not in session():
         return redirect(url_for('dashboard'))
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -325,4 +336,3 @@ def home():
 if __name__ == "__main__":
     init_db()
     app.run(debug=True)
-
