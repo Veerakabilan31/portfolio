@@ -1,0 +1,179 @@
+<!-- templates/dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{
+      --bg:#0a0a0a; --card:#141414; --accent:#ffcc00; --muted:#cfcfcf;
+    }
+    body { font-family: Inter, Arial, sans-serif; background:var(--bg); color:#fff; margin:14px; }
+    h1,h2{ color:var(--accent); margin:8px 0; }
+    a{ color:var(--accent); text-decoration:none; }
+    .login-box{ background:var(--card); padding:24px; max-width:360px; margin:90px auto; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,0.6); }
+    input{ width:100%; padding:10px; margin:10px 0; border-radius:6px; border:none; background:#1b1b1b; color:#fff; }
+    button{ background:var(--accent); border:none; padding:10px 14px; border-radius:6px; cursor:pointer; width:100%; font-weight:700; }
+    .header{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .stats{ display:flex; gap:16px; margin:18px 0; flex-wrap:wrap; }
+    .card{ background:var(--card); padding:16px 20px; border-radius:10px; min-width:180px; text-align:center; box-shadow:0 6px 16px rgba(0,0,0,0.6); }
+    .card p{ font-size:26px; color:var(--accent); margin:6px 0; font-weight:700; }
+    .actions{ margin:8px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .del-link{ color:#ff7777; font-weight:700; text-decoration:none; }
+    table{ width:100%; border-collapse:collapse; background:var(--card); border-radius:8px; overflow:hidden; margin-bottom:26px; }
+    th,td{ padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.03); text-align:left; font-size:13px; color:var(--muted); }
+    th{ color:var(--accent); background:#111; font-weight:700; }
+    tr:nth-child(even){ background:rgba(255,255,255,0.01); }
+    .small{ font-size:12px; color:#aaa; }
+    @media (max-width:700px){
+      .stats{ flex-direction:column; }
+      table, th, td{ font-size:12px; }
+    }
+    .chart-wrap{ background:var(--card); padding:12px; border-radius:10px; margin-bottom:18px; }
+    .confirm { background:#ff7777; color:#111; padding:6px 10px; border-radius:6px; border:none; cursor:pointer; font-weight:700; }
+  </style>
+</head>
+<body>
+
+{% if show_login %}
+  <div class="login-box">
+    <h2>Admin Login</h2>
+    <form method="POST">
+      <input name="username" placeholder="Username" required>
+      <input type="password" name="password" placeholder="Password" required>
+      <button type="submit">Login</button>
+      {% if error %}
+        <p style="color:#ff7777;margin-top:10px;">{{ error }}</p>
+      {% endif %}
+    </form>
+  </div>
+{% else %}
+  <div class="header">
+    <h1>Portfolio Dashboard</h1>
+    <div>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="card">
+      <h2>Total Visits</h2>
+      <p>{{ total_visits }}</p>
+      <div class="small">Unique: {{ unique_visitors }}</div>
+    </div>
+
+    <div class="card">
+      <h2>Total Messages</h2>
+      <p>{{ total_messages }}</p>
+    </div>
+
+    <div class="card">
+      <h2>Actions</h2>
+      <div class="actions">
+        <a class="del-link" href="/delete_all_visits" onclick="return confirm('Delete ALL visit records?');">Delete All Visits</a>
+        <a class="del-link" href="/delete_all_messages" onclick="return confirm('Delete ALL messages?');">Delete All Messages</a>
+        <a class="del-link" href="/export_messages">Export Messages CSV</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <h2>Visits — last 30 days</h2>
+    <canvas id="visitsChart" style="width:100%;height:240px;"></canvas>
+  </div>
+
+  <div class="chart-wrap">
+    <h2>Messages — last 30 days</h2>
+    <canvas id="messagesChart" style="width:100%;height:240px;"></canvas>
+  </div>
+
+  <h2>Recent Visitors</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>IP</th><th>User Agent</th><th>Timestamp</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for v in visits %}
+      <tr>
+        <td>{{ v[0] }}</td>
+        <td>{{ v[1] }}</td>
+        <td style="word-break:break-all;">{{ v[2] }}</td>
+        <td>{{ v[3] }}</td>
+        <td><a class="del-link" href="{{ url_for('delete_visit', vid=v[0]) }}" onclick="return confirm('Delete this visit?');">Delete</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Recent Messages</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Email</th><th>Message</th><th>Timestamp</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for m in messages %}
+      <tr>
+        <td>{{ m[0] }}</td>
+        <td>{{ m[1] }}</td>
+        <td>{{ m[2] }}</td>
+        <td style="white-space:pre-line; max-width:420px;">{{ m[3] }}</td>
+        <td>{{ m[4] }}</td>
+        <td><a class="del-link" href="{{ url_for('delete_message', mid=m[0]) }}" onclick="return confirm('Delete this message?');">Delete</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const visitsLabels = {{ visits_labels | tojson }};
+    const visitsData = {{ visits_values | tojson }};
+    const messagesLabels = {{ messages_labels | tojson }};
+    const messagesData = {{ messages_values | tojson }};
+
+    const visitsCtx = document.getElementById('visitsChart').getContext('2d');
+    new Chart(visitsCtx, {
+      type: 'line',
+      data: {
+        labels: visitsLabels,
+        datasets: [{
+          label: 'Visits',
+          data: visitsData,
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+        }]
+      },
+      options:{
+        scales:{
+          x:{ ticks:{color:'#ddd'} },
+          y:{ ticks:{color:'#ddd'} }
+        },
+        plugins:{legend:{labels:{color:'#ddd'}}}
+      }
+    });
+
+    const msgCtx = document.getElementById('messagesChart').getContext('2d');
+    new Chart(msgCtx, {
+      type: 'bar',
+      data: {
+        labels: messagesLabels,
+        datasets: [{
+          label: 'Messages',
+          data: messagesData,
+          borderWidth: 1
+        }]
+      },
+      options:{
+        scales:{
+          x:{ ticks:{color:'#ddd'} },
+          y:{ ticks:{color:'#ddd'} }
+        },
+        plugins:{legend:{labels:{color:'#ddd'}}}
+      }
+    });
+  </script>
+{% endif %}
+</body>
+</html>
