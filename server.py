@@ -25,7 +25,8 @@ DB_FILE = "portfolio.db"
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
 
 # ====== Database Setup ======
 def init_db():
@@ -76,6 +77,12 @@ def log_visitor():
         print("Visitor logging failed:", e)
 
 # ====== Contact Form API ======
+
+@app.route('/send-email', methods=['OPTIONS'])
+def send_email_options():
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route('/send-email', methods=['POST'])
 def send_email():
     try:
@@ -311,3 +318,4 @@ def home():
 if __name__ == "__main__":
     init_db()
     app.run(debug=True)
+
