@@ -8,6 +8,8 @@ import requests
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from dotenv import load_dotenv
+from flask import send_from_directory
+
 
 # Load env
 load_dotenv()
@@ -22,6 +24,10 @@ DB_FILE = "portfolio.db"
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+@app.route('/googlec4d3957958caa047.html')
+def google_verify():
+    return send_from_directory('.', 'googlec4d3957958caa047.html')
+
 
 # Simple CORS headers for GitHub Pages -> Render
 @app.after_request
