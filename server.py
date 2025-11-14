@@ -332,6 +332,28 @@ def logout():
 @app.route('/')
 def home():
     return "Backend Active", 200
+@app.route("/sitemap.xml")
+def sitemap():
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://veerakabilan31.github.io/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://veerakabilan31.github.io/#skills</loc>
+  </url>
+  <url>
+    <loc>https://veerakabilan31.github.io/#projects</loc>
+  </url>
+  <url>
+    <loc>https://veerakabilan31.github.io/#contact</loc>
+  </url>
+</urlset>
+"""
+    return app.response_class(xml, mimetype="application/xml")
+
 
 if __name__ == "__main__":
     init_db()
